@@ -16,6 +16,11 @@
             "Sue\\ChildProcess\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Sue\\ChildProcess\\Tests\\": "tests/"
+        }
+    },
     "authors": [
         {
             "name": "heroest",
