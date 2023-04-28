@@ -1,5 +1,5 @@
 # 子进程(Child-process)组件
-提供基于Sue\eventloop的子进程管理工具，需要php >= 5.6.0即可
+提供基于sue/event-loop的子进程管理工具，需要php >= 5.6.0即可
 
 ## What is ReactPHP?
 [ReactPHP](https://reactphp.org/)是一款基于PHP的事件驱动的组件。核心是提供EventLoop，然后提供基于EventLoop上的各种组件，比方说I/O处理，定时器等。
