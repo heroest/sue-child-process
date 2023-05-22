@@ -83,13 +83,18 @@ class ProcessTest extends BaseTest
         $cmd = $this->cmd($seconds, 'foo');
         $process = new Process($cmd);
         $storage = [];
+        $errors = [];
         $process->output(function ($chunk) use (&$storage) {
             $storage[] = $chunk;
+        });
+        $process->errorOutput(function ($chunk) use (&$errors) {
+            $errors[] = $chunk;
         });
         $process->attach();
         loop()->run();
         $this->assertCount($seconds, $storage);
         $this->assertTrue(trim($storage[0]) === 'foo');
+        $this->assertEmpty($errors);
     }
 
     public function testOutputWithException()
@@ -100,14 +105,18 @@ class ProcessTest extends BaseTest
         $cmd = $this->cmdThrowable(1, 'foo', 'bar');
         $process = new Process($cmd);
         $content = '';
+        $errors = '';
         $process->output(function ($chunk) use (&$content) {
             $content .= $chunk;
+        });
+        $process->errorOutput(function ($chunk) use (&$errors) {
+            $errors .= $chunk;
         });
         $process->attach();
         loop()->run();
         $this->assertStringContainsStringIgnoringCase('foo', $content);
-        $this->assertStringContainsStringIgnoringCase('bar', $content);
-        $this->assertStringContainsStringIgnoringCase('RuntimeException', $content);
+        $this->assertStringNotContainsStringIgnoringCase('bar', $content);
+        $this->assertStringContainsStringIgnoringCase('RuntimeException', $errors);
     }
 
     public function testTimeout()

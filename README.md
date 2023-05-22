@@ -11,6 +11,7 @@
     * [setMinUpTime()](#setminuptime)
 * [Sue\ChildProcess\AbstractProcess](#abstractprocess)
     * [attach()](#attach)
+    * [promise()](#promise)
     * [terminate()](#terminate)
     * [output()](#output)
     * [isRunning()](#isrunning)
@@ -106,6 +107,22 @@ $process->attach();
 loop()->run();
 ```
 
+#### promise
+获取进程运行结果的promise
+
+```php
+$process = new Process('php work.php');
+$process->attach();
+$process->promise()->then(
+    function () {
+        echo "process end successfully\n"
+    },
+    function ($error) {
+        echo "process stop with error: " . $error . "\n";
+    }
+);
+```
+
 #### terminate
 `$process->terminate($signal, $exception)`可以中止正在运行的进程
 ```php
@@ -140,7 +157,7 @@ $process->attach()->then(null, function (\RuntimeException $e) {
 ```
 
 #### output
-`$process->output()`可以为进程注册一个回调函数，用以实时接收进程的stdout和stderr的输出信息。
+`$process->output()`可以为进程注册一个回调函数，用以实时接收进程的stdout的输出信息。
 > 这个功能在windows的命令行环境中无法使用（方法不报错，但是不会接收到任何数据） 
 windows平台可以在 WSL (windows sub linux) 中正常使用
 ```php
@@ -152,7 +169,6 @@ while (true) {
 
 //process.php
 use Sue\ChildProcess\PersistentProcess;
-
 use function Sue\EventLoop\loop;
 
 $process = new PersistentProcess('php consumer.php');
@@ -167,6 +183,32 @@ loop()->run();
  * hello world
  * hello world
  * ...
+ */
+```
+
+#### errorOutput
+`$process->errorOutput()`可以为进程注册一个回调函数，用以实时接收进程的stderr的输出信息。
+> 这个功能在windows的命令行环境中无法使用（方法不报错，但是不会接收到任何数据） 
+windows平台可以在 WSL (windows sub linux) 中正常使用
+```php
+//consumer.php
+while (true) {
+    echo "hello world\n";
+    sleep(1);
+}
+throw new Exception('foo');
+
+//process.php
+use Sue\ChildProcess\Process;
+use function Sue\EventLoop\loop;
+$process = new Process('php consumer.php');
+$process->errorOutput(function ($chunk) {
+    echo $chunk;
+});
+$process->attach();
+loop()->run();
+/** expected output:
+* Fatal error: Uncaught Exception: foo in consumer.php:3
  */
 ```
 

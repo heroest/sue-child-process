@@ -18,17 +18,18 @@ use function Sue\EventLoop\nextTick;
 
 abstract class AbstractProcess extends \React\ChildProcess\Process
 {
+    const STDOUT = 'stdout';
+    const STDERR = 'stderr';
+
+
     /** @var string $name */
     protected $name;
 
     /** @var Deferred $deferred */
     protected $deferred;
 
-    /** @var PromiseInterface|Promise $promise */
+    /** @var Promise|PromiseInterface $promise */
     protected $promise;
-
-    /** @var Exception|null $throwable */
-    protected $throwable;
 
     /** @var callable[]|\Closure[] $outputCallbacks */
     protected $outputCallbacks = [];
@@ -36,11 +37,11 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
     /** @var int|false $timeStart 进程启动时间 */
     protected $timeStart = false;
 
-    /** @var bool $attached 是否已挂载 */
-    protected $attached = false;
-
     /** @var bool $settled 进程是否已完成 */
     protected $finished = false;
+
+    /** @var bool $attached 是否已挂载 */
+    protected $attached = false;
 
     public function __construct($cmd, $cwd = null, array $env = null, array $fds = null)
     {
@@ -53,16 +54,16 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
         }
         parent::__construct(self::wrapCommand($cmd), $cwd, $env, $fds);
         $this->name = 'default_' . microtime(true);
-
         $this->deferred = new Deferred(function () {
             $this->terminate(
-                null, 
+                null,
                 new ProcessCancelledException("Process promise has been cancelled")
             );
         });
-        /** @var \React\Promise\Promise|\React\Promise\PromiseInterface $promise */
+
+        /** @var Promise|PromiseInterface $promise */
         $promise = $this->deferred->promise();
-        $promise->always(function () {
+        $this->promise = $promise->always(function () {
             $this->finished = true;
         });
     }
@@ -79,7 +80,7 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
      * 设置名称
      *
      * @param  $name
-     * @return self
+     * @return static
      */
     public function setName($name)
     {
@@ -98,16 +99,40 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
     }
 
     /**
-     * 绑定output回调方法
+     * 获取promise
+     *
+     * @return PromiseInterface|Promise
+     */
+    public function promise()
+    {
+        return $this->promise;
+    }
+
+    /**
+     * 绑定stdout输出
      * 
      * 此方法在windows环境下的命令行无效
      *
      * @param callable $callback
-     * @return self
+     * @return static
      */
     public function output(callable $callback)
     {
-        self::isWindows() or $this->outputCallbacks[] = $callback;
+        self::isWindows() or $this->outputCallbacks[self::STDOUT][] = $callback;
+        return $this;
+    }
+
+    /**
+     * 绑定stderr输出
+     * 
+     * 此方法在windows环境下的命令行无效
+     *
+     * @param callable $callback
+     * @return static
+     */
+    public function errorOutput(callable $callback)
+    {
+        self::isWindows() or $this->outputCallbacks[self::STDERR][] = $callback;
         return $this;
     }
 
@@ -141,11 +166,10 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
      */
     public function terminate($signal = null, Exception $exception = null)
     {
-        $this->finished = true;
         foreach ($this->pipes as $pipe) {
             $pipe->close();
         }
-        $exception 
+        $exception
             ? $this->deferred->reject($exception)
             : $this->deferred->resolve(null);
         return parent::terminate($signal);
@@ -156,8 +180,8 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
      */
     public function __destruct()
     {
-        $exception = $this->finished 
-            ? null 
+        $exception = $this->finished
+            ? null
             : new ProcessException('process is terminated because object was destroyed');
         $this->terminate(null, $exception);
     }
@@ -172,7 +196,7 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
     }
 
     /**
-     * 执行命令
+     * 开始运行进程
      * 
      * @param float $interval
      * @param callable $after_started
@@ -185,46 +209,61 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
         return nextTick(function () use ($interval) {
             $this->timeStart = microtime(true);
             parent::start(loop(), $interval);
-            if (!self::isWindows()) {
-                $this->bindStdout();
-                $this->bindStderr();
-            }
+            self::isWindows() or $this->bindProcessOutput();
+        })->otherwise(function ($error) {
+            $this->terminate(null, $error);
         });
     }
 
     /**
-     * 绑定stdout
+     * 绑定进程输出
      *
-     * @return void
+     * @return static
      */
-    protected function bindStdout()
+    protected function bindProcessOutput()
     {
-        $closure = function ($chunk) {
-            foreach ($this->outputCallbacks as $cb) {
+        $closure_failure = $this->closureOnFailure();
+        $this->stdout
+            ->on('data', $this->closureOnSuccess(self::STDOUT))
+            ->on('error', $closure_failure);
+        $this->stderr
+            ->on('data', $this->closureOnSuccess(self::STDERR))
+            ->on('error', $closure_failure);
+        return $this;
+    }
+
+    /**
+     * 生成绑定std输出的closure
+     *
+     * @param string $channel
+     * @return \Closure
+     */
+    protected function closureOnSuccess($channel)
+    {
+        return function ($chunk) use ($channel) {
+            $callbacks = isset($this->outputCallbacks[$channel])
+                ? $this->outputCallbacks[$channel]
+                : [];
+            foreach ($callbacks as $cb) {
                 try {
                     call($cb, $chunk);
                 } catch (Exception $e) {
                 }
             }
         };
-        $this->stdout->on('data', $closure);
-        $this->stderr->on('data', $closure);
     }
 
     /**
-     * 绑定stderr类输出
+     * 生成绑定std输出时报错的closure
      *
-     * @return void
+     * @return \Closure
      */
-    protected function bindStderr()
+    protected function closureOnFailure()
     {
-        $closure = function ($error) {
+        return function ($error) {
             $throwable = self::wrapException($error);
-            $this->throwable = $throwable;
-            $this->deferred->reject($throwable);
+            $this->terminate(null, $throwable);
         };
-        $this->stdout->on('error', $closure);
-        $this->stderr->on('error', $closure);
     }
 
     /**

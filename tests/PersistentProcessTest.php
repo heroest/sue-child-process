@@ -104,8 +104,12 @@ class PersistentProcessTest extends BaseTest
         $process = new PersistentProcess($cmd);
         $process->attach();
         $storage = [];
+        $errors = [];
         $process->output(function ($chunk) use (&$storage) {
             $storage[] = $chunk;
+        });
+        $process->errorOutput(function ($chunk) use (&$errors) {
+            $errors[] = $chunk;
         });
         setTimeout($seconds, function () use ($process) {
             $process->terminate();
@@ -113,6 +117,7 @@ class PersistentProcessTest extends BaseTest
         loop()->run();
         $this->assertCount($seconds, $storage);
         $this->assertEquals('bar', trim($storage[0]));
+        $this->assertEmpty($errors);
     }
 
     public function testOutputWithException()
@@ -125,14 +130,18 @@ class PersistentProcessTest extends BaseTest
         $process = new PersistentProcess($cmd);
         $process->setMinUpTime(10)->setMaxRetries(0);
         $content = '';
+        $errors = '';
         $process->output(function ($chunk) use (&$content) {
             $content .= $chunk;
+        });
+        $process->errorOutput(function ($chunk) use (&$errors) {
+            $errors .= $chunk;
         });
         $process->attach();
         loop()->run();
         $this->assertStringContainsStringIgnoringCase('foo', $content);
-        $this->assertStringContainsStringIgnoringCase('bar', $content);
-        $this->assertStringContainsStringIgnoringCase('RuntimeException', $content);
+        $this->assertStringNotContainsStringIgnoringCase('bar', $content);
+        $this->assertStringContainsStringIgnoringCase('RuntimeException', $errors);
     }
 
     public function testRunWithRestartSuccessfully()

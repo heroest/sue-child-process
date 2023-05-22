@@ -6,6 +6,8 @@ use Exception;
 use Sue\ChildProcess\AbstractProcess;
 use Sue\ChildProcess\Exceptions\ProcessException;
 
+use function Sue\EventLoop\call;
+
 /**
  * 常驻进程，类似supervisor会自动拉起失败的任务
  * 默认最小运行时间 1 秒，可以通过 setMinUpTime() 设置
@@ -13,20 +15,23 @@ use Sue\ChildProcess\Exceptions\ProcessException;
  */
 class PersistentProcess extends AbstractProcess
 {
+    /** @var Exception|null $throwable */
+    protected $throwable;
+
     /** @var int $maxFailCount 最大错误数 */
-    private $maxRetries = 10;
+    protected $maxRetries = 10;
 
     /** @var int $minUpTime 最短运行时间（秒） */
-    private $minUpTime = 1;
+    protected $minUpTime = 1;
 
     /** @var int $tries 重启次数 */
-    private $tries = 0;
+    protected $tries = 0;
 
     /**
      * 设置重试次数
      * 
      * @param int $count
-     * @return self
+     * @return static
      */
     public function setMaxRetries($count)
     {
@@ -38,7 +43,7 @@ class PersistentProcess extends AbstractProcess
      * 设置最少有效运行时间
      *
      * @param float $seconds
-     * @return self
+     * @return static
      */
     public function setMinUpTime($seconds)
     {
@@ -50,10 +55,10 @@ class PersistentProcess extends AbstractProcess
     public function attach($interval = 0.1)
     {
         if ($this->attached) {
-            return $this->deferred->promise();
+            return $this->promise();
         }
-
         $this->attached = true;
+
         $interval = (float) $interval;
         $this->on('exit', function ($error_code) use ($interval) {
             if ($this->finished) {
@@ -75,30 +80,18 @@ class PersistentProcess extends AbstractProcess
             }
 
             $this->close();
-            $this->execute($interval)
-                ->otherwise(function ($exception) {
-                    $this->terminate(null, $exception);
-                });
+            $this->execute($interval);
         });
-        $this->execute($interval)
-            ->otherwise(function ($exception) {
-                $this->terminate(null, $exception);
-            });
-        return $this->deferred->promise();
+        $this->execute($interval);
+        return $this->promise();
     }
 
-    /**
-     * 绑定下stderr输出
-     *
-     * @return void
-     */
-    protected function bindStderr()
+    /** @inheritDoc */
+    protected function closureOnFailure()
     {
-        $closure = function ($error) {
-            $throwable = self::wrapException($error);
-            $this->throwable = $throwable;
+        return function ($error) {
+            $this->throwable = self::wrapException($error);
+            $this->close();
         };
-        $this->stdout->on('error', $closure);
-        $this->stderr->on('error', $closure);
     }
 }
