@@ -12,7 +12,6 @@ use React\Promise\Promise;
 use Sue\ChildProcess\Exceptions\ProcessException;
 use Sue\ChildProcess\Exceptions\ProcessCancelledException;
 
-use function Sue\EventLoop\call;
 use function Sue\EventLoop\loop;
 use function Sue\EventLoop\nextTick;
 
@@ -65,6 +64,7 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
         $promise = $this->deferred->promise();
         $this->promise = $promise->always(function () {
             $this->finished = true;
+            gc_collect_cycles();
         });
     }
 
@@ -246,7 +246,7 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
                 : [];
             foreach ($callbacks as $cb) {
                 try {
-                    call($cb, $chunk);
+                    call_user_func($cb, $chunk);
                 } catch (Exception $e) {
                 }
             }
