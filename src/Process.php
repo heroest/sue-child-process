@@ -42,21 +42,27 @@ class Process extends AbstractProcess
             return $this->promise();
         }
         $this->attached = true;
-        
+
+        $that = $this;
         $interval = (float) $interval;
-        $this->on('exit', function ($error_code) {
-            $this->timeout and cancelTimer($this->timeout);
+        $this->on('exit', static function ($error_code) use (&$that) {
+            $that->timeout and cancelTimer($that->timeout);
             if (0 === bccomp(0, $error_code)) {
-                $this->deferred->resolve(null);
+                $that->deferred->resolve(null);
             } else {
-                $this->deferred
+                $that->deferred
                     ->reject(new ProcessException("Process exit with code: {$error_code}"));
             }
         });
         $this->execute($interval)
-            ->then(function () {
-                $this->setProcessTimeout();
-            });
+            ->then(
+                static function () use (&$that) {
+                    $that->setProcessTimeout();
+                },
+                static function ($error) use (&$that) {
+                    $that->deferred->reject($error);
+                }
+            );
         return $this->promise();
     }
 

@@ -60,27 +60,32 @@ class PersistentProcess extends AbstractProcess
         $this->attached = true;
 
         $interval = (float) $interval;
-        $this->on('exit', function ($error_code) use ($interval) {
-            if ($this->finished) {
+        $that = $this;
+        $this->on('exit', static function ($error_code) use (&$that, $interval) {
+            if ($that->finished) {
+                $that = null;
                 return;
             }
 
-            if ($this->getUpTime() >= $this->minUpTime) {
-                $this->tries = 0;
-            } elseif ($this->tries < $this->maxRetries) {
-                $this->tries++;
+            if ($that->getUpTime() >= $that->minUpTime) {
+                $that->tries = 0;
+            } elseif ($that->tries < $that->maxRetries) {
+                $that->tries++;
             } else {
                 $contents = [];
-                $contents[] = "Exited too quickly after {$this->tries} tries";
+                $contents[] = "Exited too quickly after {$that->tries} tries";
                 $contents[] = "with exit code: {$error_code}";
-                $this->throwable and $contents[] = "and exception";
-                $throwable = new ProcessException(implode(' ', $contents), 0, $this->throwable);
-                $this->deferred->reject($throwable);
+                $that->throwable and $contents[] = "and exception";
+                $throwable = new ProcessException(implode(' ', $contents), 0, $that->throwable);
+                $that->deferred->reject($throwable);
                 return;
             }
 
-            $this->close();
-            $this->execute($interval);
+            $that->close();
+            $that->execute($interval)
+                ->otherwise(static function ($exception) use (&$that) {
+                    $that->terminate(null, $exception);
+                });
         });
         $this->execute($interval);
         return $this->promise();

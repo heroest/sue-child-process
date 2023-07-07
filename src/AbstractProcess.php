@@ -53,19 +53,21 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
         }
         parent::__construct(self::wrapCommand($cmd), $cwd, $env, $fds);
         $this->name = 'default_' . microtime(true);
-        $this->deferred = new Deferred(function () {
-            $this->terminate(
+
+
+        $that = $this;
+        $this->deferred = new Deferred(static function () use (&$that) {
+            $that->terminate(
                 null,
                 new ProcessCancelledException("Process promise has been cancelled")
             );
         });
 
-        /** @var Promise|PromiseInterface $promise */
-        $promise = $this->deferred->promise();
-        $this->promise = $promise->always(function () {
-            $this->finished = true;
-            gc_collect_cycles();
-        });
+        $closure = static function () use (&$that) {
+            $that->finished = true;
+            $that = null;
+        };
+        $this->promise()->done($closure, $closure);
     }
 
     /**
@@ -105,7 +107,7 @@ abstract class AbstractProcess extends \React\ChildProcess\Process
      */
     public function promise()
     {
-        return $this->promise;
+        return $this->deferred->promise();
     }
 
     /**
